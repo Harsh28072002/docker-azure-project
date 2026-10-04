@@ -1,0 +1,8 @@
+variable "uai" {
+
+}
+
+variable "rg" {
+
+}
+
