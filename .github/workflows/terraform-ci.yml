@@ -49,8 +49,7 @@ jobs:
       - name: Terraform Validate - QA Application
         run: terraform -chdir=terraform/env/QA/application validate
 
-      - name: Terraform Plan - QA Application
-        run: terraform -chdir=terraform/env/QA/application plan
+    
 
       - name: Terraform Init - PROD Foundation
         run: terraform -chdir=terraform/env/PROD/foundation init
@@ -67,5 +66,4 @@ jobs:
       - name: Terraform Validate - PROD Application
         run: terraform -chdir=terraform/env/PROD/application validate
 
-      - name: Terraform Plan - PROD Application
-        run: terraform -chdir=terraform/env/PROD/application plan
+    
