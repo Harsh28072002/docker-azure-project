@@ -1,0 +1,279 @@
+name: Terraform Deployment
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+
+  # ============================================================
+  # QA FOUNDATION
+  # Creates:
+  # - Resource Group
+  # - Azure Container Registry
+  # - User Assigned Identity
+  # ============================================================
+
+  qa-foundation:
+    name: QA - Foundation
+    runs-on: ubuntu-latest
+    environment: QA
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.QA_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform/env/QA/foundation init
+
+      - name: Terraform Validate
+        run: terraform -chdir=terraform/env/QA/foundation validate
+
+      - name: Terraform Apply
+        run: terraform -chdir=terraform/env/QA/foundation apply -auto-approve
+
+
+  # ============================================================
+  # QA DOCKER
+  # Foundation has already created QA ACR.
+  #
+  # Build:
+  # docker-azure-app:latest
+  #
+  # Push:
+  # ibmqaacr.azurecr.io/docker-azure-app:latest
+  # ============================================================
+
+  qa-docker:
+    name: QA - Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: qa-foundation
+    environment: QA
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.QA_SUBSCRIPTION_ID }}
+
+      - name: Login to QA ACR
+        run: az acr login --name ibmqaacr
+
+      - name: Build Docker Image
+        run: |
+          docker build \
+            -t ibmqaacr.azurecr.io/docker-azure-app:latest \
+            .
+
+      - name: Push Docker Image
+        run: |
+          docker push \
+            ibmqaacr.azurecr.io/docker-azure-app:latest
+
+
+  # ============================================================
+  # QA APPLICATION
+  # Container App is created/updated after the Docker image
+  # has already been pushed to QA ACR.
+  # ============================================================
+
+  qa-application:
+    name: QA - Application
+    runs-on: ubuntu-latest
+    needs: qa-docker
+    environment: QA
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.QA_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform/env/QA/application init
+
+      - name: Terraform Validate
+        run: terraform -chdir=terraform/env/QA/application validate
+
+      - name: Terraform Plan
+        run: terraform -chdir=terraform/env/QA/application plan
+
+      - name: Terraform Apply
+        run: terraform -chdir=terraform/env/QA/application apply -auto-approve
+
+
+  # ============================================================
+  # QA VERIFICATION
+  # ============================================================
+
+  qa-verification:
+    name: QA - Verification
+    runs-on: ubuntu-latest
+    needs: qa-application
+    environment: QA
+
+    steps:
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.QA_SUBSCRIPTION_ID }}
+
+      - name: Verify QA Container App
+        run: |
+          echo "Checking QA Container Apps..."
+
+          az containerapp list \
+            --subscription "${{ vars.QA_SUBSCRIPTION_ID }}" \
+            --query "[].{Name:name,ResourceGroup:resourceGroup,Status:properties.provisioningState}" \
+            -o table
+
+
+  # ============================================================
+  # PROD FOUNDATION
+  #
+  # IMPORTANT:
+  # This job cannot start until QA has completed successfully.
+  #
+  # PROD environment protection will provide the approval.
+  # ============================================================
+
+  prod-foundation:
+    name: PROD - Foundation
+    runs-on: ubuntu-latest
+    needs: qa-verification
+    environment: PROD
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.PROD_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform/env/PROD/foundation init
+
+      - name: Terraform Validate
+        run: terraform -chdir=terraform/env/PROD/foundation validate
+
+      - name: Terraform Apply
+        run: terraform -chdir=terraform/env/PROD/foundation apply -auto-approve
+
+
+  # ============================================================
+  # PROD DOCKER
+  #
+  # Foundation has already created PROD ACR.
+  # ============================================================
+
+  prod-docker:
+    name: PROD - Build and Push Docker Image
+    runs-on: ubuntu-latest
+    needs: prod-foundation
+    environment: PROD
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.PROD_SUBSCRIPTION_ID }}
+
+      - name: Login to PROD ACR
+        run: az acr login --name ibmprodacr
+
+      - name: Build Docker Image
+        run: |
+          docker build \
+            -t ibmprodacr.azurecr.io/docker-azure-app:latest \
+            .
+
+      - name: Push Docker Image
+        run: |
+          docker push \
+            ibmprodacr.azurecr.io/docker-azure-app:latest
+
+
+  # ============================================================
+  # PROD APPLICATION
+  # ============================================================
+
+  prod-application:
+    name: PROD - Application
+    runs-on: ubuntu-latest
+    needs: prod-docker
+    environment: PROD
+
+    steps:
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.PROD_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform -chdir=terraform/env/PROD/application init
+
+      - name: Terraform Validate
+        run: terraform -chdir=terraform/env/PROD/application validate
+
+      - name: Terraform Plan
+        run: terraform -chdir=terraform/env/PROD/application plan
+
+      - name: Terraform Apply
+        run: terraform -chdir=terraform/env/PROD/application apply -auto-approve
