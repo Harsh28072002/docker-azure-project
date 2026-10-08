@@ -1,0 +1,69 @@
+name: Terraform CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  terraform-ci:
+    name: Terraform Validation and Plan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Version
+        run: terraform version
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive ./terraform
+
+      - name: Terraform Init - QA Foundation
+        run: terraform -chdir=terraform/env/QA/foundation init
+
+      - name: Terraform Validate - QA Foundation
+        run: terraform -chdir=terraform/env/QA/foundation validate
+
+      - name: Terraform Plan - QA Foundation
+        run: terraform -chdir=terraform/env/QA/foundation plan
+
+      - name: Terraform Init - QA Application
+        run: terraform -chdir=terraform/env/QA/application init
+
+      - name: Terraform Validate - QA Application
+        run: terraform -chdir=terraform/env/QA/application validate
+
+    
+
+      - name: Terraform Init - PROD Foundation
+        run: terraform -chdir=terraform/env/PROD/foundation init
+
+      - name: Terraform Validate - PROD Foundation
+        run: terraform -chdir=terraform/env/PROD/foundation validate
+
+      - name: Terraform Plan - PROD Foundation
+        run: terraform -chdir=terraform/env/PROD/foundation plan
+
+      - name: Terraform Init - PROD Application
+        run: terraform -chdir=terraform/env/PROD/application init
+
+      - name: Terraform Validate - PROD Application
+        run: terraform -chdir=terraform/env/PROD/application validate
+
+    
