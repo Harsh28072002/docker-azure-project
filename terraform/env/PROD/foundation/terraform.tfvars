@@ -2,7 +2,7 @@
 rg = {
   rg1 = {
     rg_name  = "ibm-prod-rg"
-    location = "East US"
+    location = "East US 2"
   }
 }
 
