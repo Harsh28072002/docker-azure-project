@@ -1,7 +1,7 @@
 rg = {
   rg1 = {
     rg_name  = "ibm-qa-rg"
-    location = "East US"
+    location = "East US 2"
   }
 }
 
